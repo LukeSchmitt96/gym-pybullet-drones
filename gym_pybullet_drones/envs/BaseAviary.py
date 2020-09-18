@@ -34,6 +34,7 @@ class Physics(Enum):
     PYB_DRAG = 3             # PyBullet physics update with drag
     PYB_DW = 4               # PyBullet physics update with downwash
     PYB_GND_DRAG_DW = 5      # PyBullet physics update with ground effect, drag, and downwash
+    PYB_WIND = 6             # PyBullet physics update with drag and wind
 
 
 ######################################################################################################################################################
@@ -71,7 +72,7 @@ class BaseAviary(gym.Env):
     def __init__(self, drone_model: DroneModel=DroneModel.CF2X, num_drones: int=1, \
                         visibility_radius: float=np.inf, initial_xyzs=None, initial_rpys=None, \
                         physics: Physics=Physics.PYB, freq: int=240, aggregate_phy_steps: int=1, \
-                        gui=False, record=False, obstacles=False):
+                        gui=False, record=False, obstacles=False, maxWindSpeed=8.0)
         #### Constants #####################################################################################
         self.G = 9.8; self.RAD2DEG = 180/np.pi; self.DEG2RAD = np.pi/180
         self.SIM_FREQ = freq; self.TIMESTEP = 1./self.SIM_FREQ; self.AGGR_PHY_STEPS = aggregate_phy_steps
@@ -93,6 +94,7 @@ class BaseAviary(gym.Env):
         self.MAX_RPM = np.sqrt((self.THRUST2WEIGHT_RATIO*self.GRAVITY)/(4*self.KF)); self.MAX_THRUST = (4*self.KF*self.MAX_RPM**2)
         self.MAX_XY_TORQUE = (self.L*self.KF*self.MAX_RPM**2); self.MAX_Z_TORQUE = (2*self.KM*self.MAX_RPM**2)
         self.GND_EFF_H_CLIP = 0.25 * self.PROP_RADIUS * np.sqrt( (15 * self.MAX_RPM**2 * self.KF * self.GND_EFF_COEFF) / self.MAX_THRUST )
+        self.MAXWINDSPEED = maxWindSpeed
         #### Connect to PyBullet ###########################################################################
         if self.GUI: 
             #### With debug GUI ################################################################################
@@ -195,10 +197,11 @@ class BaseAviary(gym.Env):
                 elif self.PHYSICS==Physics.PYB_DRAG: self._physics(clipped_action[i,:], i); self._drag(self.last_clipped_action[i,:], i)
                 elif self.PHYSICS==Physics.PYB_DW: self._physics(clipped_action[i,:], i); self._downwash(i)
                 elif self.PHYSICS==Physics.PYB_GND_DRAG_DW: self._physics(clipped_action[i,:], i); self._groundEffect(clipped_action[i,:], i); self._drag(self.last_clipped_action[i,:], i); self._downwash(i)
+                elif self.PHYSICS==Physics.PYB_WIND: self._physics(clipped_action[i,:], i); self._dragWithWind(self.last_clipped_action[i,:], i)
             #### Let PyBullet compute the new state, unless using Physics.DYN ##################################
             if self.PHYSICS!=Physics.DYN: p.stepSimulation(physicsClientId=self.CLIENT) 
             #### Save the last applied action to compute drag in the next step #################################
-            if self.PHYSICS in [Physics.PYB_DRAG, Physics.PYB_GND_DRAG_DW]: self.last_clipped_action = clipped_action
+            if self.PHYSICS in [Physics.PYB_DRAG, Physics.PYB_GND_DRAG_DW, Physics.PYB_WIND]: self.last_clipped_action = clipped_action
         #### Update and store the drones kinematic information #############################################
         self._updateAndStoreKinematicInfo()
         #### Prepare the return values #####################################################################
@@ -260,6 +263,9 @@ class BaseAviary(gym.Env):
         #### Initialize the drones kinemaatic information ##################################################
         self.pos = np.zeros((self.NUM_DRONES,3)); self.quat = np.zeros((self.NUM_DRONES,4)); self.rpy = np.zeros((self.NUM_DRONES,3))
         self.vel = np.zeros((self.NUM_DRONES,3)); self.ang_v = np.zeros((self.NUM_DRONES,3)) 
+        #### Initialize wind speed and heading information #################################################
+        windHeading = np.random.rand()*2*np.pi
+        self.wind=np.random.rand()*self.MAXWINDSPEED*np.array([-np.cos(windHeading),np.sin(windHeading),0])
         #### Set PyBullet's parameters #####################################################################
         p.setGravity(0, 0, -self.G, physicsClientId=self.CLIENT)
         p.setRealTimeSimulation(0, physicsClientId=self.CLIENT)
@@ -404,6 +410,22 @@ class BaseAviary(gym.Env):
         #### Simple draft model applied to the base/center of mass #########################################
         drag_factors = -1 * self.DRAG_COEFF * np.sum(np.array(2*np.pi*rpm/60))
         drag = np.dot(base_rot, drag_factors*np.array(self.vel[nth_drone,:]))
+        p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=drag, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT) 
+
+    ####################################################################################################
+    #### PyBullet implementation of drag with Wind, based off _drag ####################################
+    ####################################################################################################
+    #### Arguments #####################################################################################
+    #### - rpm ((4,1) array)                RPM values of the 4 motors #################################
+    #### - nth_drone (int)                  order position of the drone in list self.DRONE_IDS #########
+    ####################################################################################################
+    def _dragWithWind(self, rpm, nth_drone):
+        #### Rotation matrix of the base ###################################################################        
+        base_rot = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone,:])).reshape(3,3)
+        #### Simple draft model applied to the base/center of mass #########################################
+        drag_factors = -1 * self.DRAG_COEFF * np.sum(np.array(2*np.pi*rpm/60))
+        velocityInWind = np.array(self.vel[nth_drone,:]) - self.wind[:]
+        drag = np.dot(base_rot, drag_factors*velocityInWind)
         p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=drag, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT) 
 
     ####################################################################################################
