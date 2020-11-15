@@ -36,6 +36,7 @@ class Physics(Enum):
     PYB_DW = 4               # PyBullet physics update with downwash
     PYB_GND_DRAG_DW = 5      # PyBullet physics update with ground effect, drag, and downwash
     PYB_WIND = 6             # PyBullet physics update with drag and wind
+    PYB_TETHER = 7           # PyBullet physics update with tether
     #### String representation of Physics ##############################################################
     def __str__(self): return self.name
 
@@ -82,6 +83,14 @@ class BaseAviary(gym.Env):
         self.SIM_FREQ = freq; self.TIMESTEP = 1./self.SIM_FREQ; self.AGGR_PHY_STEPS = aggregate_phy_steps
         #### Parameters ####################################################################################
         self.NUM_DRONES = num_drones; self.NEIGHBOURHOOD_RADIUS = neighbourhood_radius
+        self.N_ACTIONS = 4
+        self.INIT_X_BOUND = 0.0
+        self.INIT_Y_BOUND = 0.0
+        self.INIT_Z_BOUND = 0.0
+        self.INIT_R_BOUND = 0.0
+        self.INIT_P_BOUND = 0.0
+        self.INIT_YAW_BOUND = 0
+        self.MAX_TETHER_FORCE = 0.0
         #### Options #######################################################################################
         self.DRONE_MODEL = drone_model; self.GUI = gui; self.RECORD = record; self.PHYSICS = physics
         self.OBSTACLES = obstacles; self.USER_DEBUG = user_debug_gui
@@ -108,8 +117,9 @@ class BaseAviary(gym.Env):
             ret = p.getDebugVisualizerCamera(physicsClientId=self.CLIENT); print("viewMatrix", ret[2]); print("projectionMatrix", ret[3])
             if self.USER_DEBUG:
                 #### Add input sliders to the GUI ##################################################################
-                self.SLIDERS = -1*np.ones(4)
+                self.SLIDERS = -1*np.ones(5)
                 for i in range(4): self.SLIDERS[i] = p.addUserDebugParameter("Propeller "+str(i)+" RPM", 0, self.MAX_RPM, self.HOVER_RPM, physicsClientId=self.CLIENT)
+                if self.N_ACTIONS == 5: self.SLIDERS[4] = p.addUserDebugParameter("Tether Force", 0, self.MAX_TETHER_FORCE, 0, physicsClientId=self.CLIENT)
                 self.INPUT_SWITCH = p.addUserDebugParameter("Use GUI RPM", 9999, -1, 0, physicsClientId=self.CLIENT)
         else:
             #### Without debug GUI #############################################################################
@@ -121,12 +131,7 @@ class BaseAviary(gym.Env):
                 self.CAM_VIEW = p.computeViewMatrixFromYawPitchRoll(distance=3, yaw=-30, pitch=-30, roll=0, cameraTargetPosition=[0,0,0], upAxisIndex=2, physicsClientId=self.CLIENT)
                 self.CAM_PRO = p.computeProjectionMatrixFOV(fov=60.0, aspect=self.VID_WIDTH/self.VID_HEIGHT, nearVal=0.1, farVal=1000.0)
         #### Set initial poses #############################################################################
-        if initial_xyzs is None: self.INIT_XYZS = np.vstack([ np.array([x*4*self.L for x in range(self.NUM_DRONES)]), np.array([y*4*self.L for y in range(self.NUM_DRONES)]), np.ones(self.NUM_DRONES) * (self.COLLISION_H/2-self.COLLISION_Z_OFFSET+.1) ]).transpose().reshape(self.NUM_DRONES,3)
-        elif np.array(initial_xyzs).shape==(self.NUM_DRONES,3): self.INIT_XYZS = initial_xyzs
-        else: print("[ERROR] invalid initial_xyzs in BaseAviary.__init__(), try initial_xyzs.reshape(NUM_DRONES,3)")
-        if initial_rpys is None: self.INIT_RPYS = np.zeros((self.NUM_DRONES,3))
-        elif np.array(initial_rpys).shape==(self.NUM_DRONES,3): self.INIT_RPYS = initial_rpys
-        else: print("[ERROR] invalid initial_rpys in BaseAviary.__init__(), try initial_rpys.reshape(NUM_DRONES,3)")
+        self._setInitialPoses(initial_xyzs, initial_rpys)
         #### Create action and observation spaces ##########################################################
         self.action_space = self._actionSpace()
         self.observation_space = self._observationSpace()
@@ -183,29 +188,30 @@ class BaseAviary(gym.Env):
                 self.last_input_switch = current_input_switch
                 self.USE_GUI_RPM = True if self.USE_GUI_RPM==False else False
         if self.USE_GUI_RPM:
-            for i in range(4): self.gui_input[i] = p.readUserDebugParameter(int(self.SLIDERS[i]), physicsClientId=self.CLIENT)
+            for i in range(self.N_ACTIONS): self.gui_input[i] = p.readUserDebugParameter(int(self.SLIDERS[i]), physicsClientId=self.CLIENT)
             clipped_action = np.tile(self.gui_input,(self.NUM_DRONES,1))
             if self.step_counter%(self.SIM_FREQ/2)==0: self.GUI_INPUT_TEXT = [ p.addUserDebugText("Using GUI RPM", textPosition=[0,0,0], textColorRGB=[1,0,0], lifeTime=1, textSize=2, parentObjectUniqueId=self.DRONE_IDS[i], parentLinkIndex=-1, replaceItemUniqueId=int(self.GUI_INPUT_TEXT[i]), physicsClientId=self.CLIENT) for i in range(self.NUM_DRONES) ]
         #### Save, preprocess, and clip the action to the maximum RPM ######################################
-        else: self._saveLastAction(action); clipped_action = np.reshape(self._preprocessAction(action), (self.NUM_DRONES,4))
+        else: clipped_action = self._actionSaveAndPreprocess(action)
         #### Repeat for as many as the aggregate physics steps/dynamics updates ############################
         for _ in range(self.AGGR_PHY_STEPS):
             #### Re-update and store the drones kinematic info to use DYN or compute the aerodynamics effects ##
-            if self.AGGR_PHY_STEPS>1 and self.PHYSICS in [Physics.DYN, Physics.PYB_GND, Physics.PYB_DRAG, Physics.PYB_WIND, Physics.PYB_DW, Physics.PYB_GND_DRAG_DW]: 
+            if self.AGGR_PHY_STEPS>1 and self.PHYSICS in [Physics.DYN, Physics.PYB_GND, Physics.PYB_DRAG, Physics.PYB_WIND, Physics.PYB_TETHER, Physics.PYB_DW, Physics.PYB_GND_DRAG_DW]: 
                 self._updateAndStoreKinematicInformation()
             #### Step the simulation using the desired physics update ##########################################
             for i in range (self.NUM_DRONES):
-                if self.PHYSICS==Physics.PYB: self._physics(clipped_action[i,:], i)
-                elif self.PHYSICS==Physics.DYN: self._dynamics(clipped_action[i,:], i)
-                elif self.PHYSICS==Physics.PYB_GND: self._physics(clipped_action[i,:], i); self._groundEffect(clipped_action[i,:], i)
-                elif self.PHYSICS==Physics.PYB_DRAG: self._physics(clipped_action[i,:], i); self._drag(self.last_clipped_action[i,:], i)
-                elif self.PHYSICS==Physics.PYB_DW: self._physics(clipped_action[i,:], i); self._downwash(i)
-                elif self.PHYSICS==Physics.PYB_GND_DRAG_DW: self._physics(clipped_action[i,:], i); self._groundEffect(clipped_action[i,:], i); self._drag(self.last_clipped_action[i,:], i); self._downwash(i)
-                elif self.PHYSICS==Physics.PYB_WIND: self._physics(clipped_action[i,:], i); self._dragWithWind(self.last_clipped_action[i,:], i)
+                if self.PHYSICS==Physics.PYB:               self._physics(clipped_action[i,:], i)
+                elif self.PHYSICS==Physics.DYN:             self._dynamics(clipped_action[i,:], i)
+                elif self.PHYSICS==Physics.PYB_GND:         self._physics(clipped_action[i,:], i); self._groundEffect(clipped_action[i,:], i)
+                elif self.PHYSICS==Physics.PYB_DRAG:        self._physics(clipped_action[i,:], i); self._drag(self.last_clipped_action[i,:], i)
+                elif self.PHYSICS==Physics.PYB_DW:          self._physics(clipped_action[i,:], i); self._downwash(i)
+                elif self.PHYSICS==Physics.PYB_GND_DRAG_DW: self._physics(clipped_action[i,:], i); self._groundEffect(clipped_action[i,:], i);              self._drag(self.last_clipped_action[i,:], i); self._downwash(i)
+                elif self.PHYSICS==Physics.PYB_WIND:        self._physics(clipped_action[i,:], i); self._dragWithWind(self.last_clipped_action[i,:], i)
+                elif self.PHYSICS==Physics.PYB_TETHER:      self._physics(clipped_action[i,0:self.N_ACTIONS-1], i); self._simpleTetherForce(clipped_action[i,self.N_ACTIONS-1], i)    # TODO: ask ryan about this line. why _dragWithWind above?
             #### Let PyBullet compute the new state, unless using Physics.DYN ##################################
             if self.PHYSICS!=Physics.DYN: p.stepSimulation(physicsClientId=self.CLIENT)
             #### Save the last applied action to compute drag in the next step #################################
-            if self.PHYSICS in [Physics.PYB_DRAG, Physics.PYB_GND_DRAG_DW, Physics.PYB_WIND]: self.last_clipped_action = clipped_action
+            if self.PHYSICS in [Physics.PYB_DRAG, Physics.PYB_GND_DRAG_DW, Physics.PYB_WIND, Physics.PYB_TETHER]: self.last_clipped_action = clipped_action
         #### Update and store the drones kinematic information #############################################
         self._updateAndStoreKinematicInformation()
         #### Prepare the return values #####################################################################
@@ -259,10 +265,10 @@ class BaseAviary(gym.Env):
     def _housekeeping(self):
         #### Initialize/reset counters and zero-valued variables ###########################################
         self.RESET_TIME = time.time(); self.step_counter = 0; self.first_render_call = True
-        self.X_AX = -1*np.ones(self.NUM_DRONES); self.Y_AX = -1*np.ones(self.NUM_DRONES); self.Z_AX = -1*np.ones(self.NUM_DRONES);
+        self.X_AX = -1*np.ones(self.NUM_DRONES); self.Y_AX = -1*np.ones(self.NUM_DRONES); self.Z_AX = -1*np.ones(self.NUM_DRONES)
         self.GUI_INPUT_TEXT = -1*np.ones(self.NUM_DRONES); self.USE_GUI_RPM=False; self.last_input_switch = 0
-        self.last_action = -1*np.ones((self.NUM_DRONES,4))
-        self.last_clipped_action = np.zeros((self.NUM_DRONES,4)); self.gui_input = np.zeros(4)
+        self.last_action = -1*np.ones((self.NUM_DRONES,self.N_ACTIONS))
+        self.last_clipped_action = np.zeros((self.NUM_DRONES,self.N_ACTIONS)); self.gui_input = np.zeros(self.N_ACTIONS)
         self.no_pybullet_dyn_accs = np.zeros((self.NUM_DRONES,3))
         #### Initialize the drones kinemaatic information ##################################################
         self.pos = np.zeros((self.NUM_DRONES,3)); self.quat = np.zeros((self.NUM_DRONES,4)); self.rpy = np.zeros((self.NUM_DRONES,3))
@@ -430,6 +436,21 @@ class BaseAviary(gym.Env):
         p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=drag, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT) 
 
     ####################################################################################################
+    #### PyBullet implementation of simple Tether ######################################################
+    ####################################################################################################
+    #### Arguments #####################################################################################
+    #### - nth_drone (int)                  order position of the drone in list self.DRONE_IDS #########
+    ####################################################################################################
+    def _simpleTetherForce(self, mag, nth_drone):
+        #### Rotation matrix of the base ###############################################################        
+        base_rot = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone,:])).reshape(3,3)
+        #### Simple force applied to the base/center of mass ###########################################
+        force_direction = np.array([0,0,1])
+        tether_force = np.dot(base_rot, -1.0*mag*force_direction)
+        #### Apply force ###############################################################################
+        p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=tether_force, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT)
+
+    ####################################################################################################
     #### PyBullet implementation of ground effect, SiQi Zhou's modelling ###############################
     ####################################################################################################
     #### Arguments #####################################################################################
@@ -498,12 +519,12 @@ class BaseAviary(gym.Env):
     #### Save an action into self.last_action disambiguating between array and dict inputs #############
     ####################################################################################################
     #### Arguments #####################################################################################
-    #### - action ((4,1) array or dict)     an array or a dict of arrays to be stored in last_action ###
+    #### - action ((4,1) array or dict)  an array or a dict of arrays to be stored in last_action ###
     ####################################################################################################
     def _saveLastAction(self, action):
         if isinstance(action, collections.Mapping):
             for k, v in action.items(): self.last_action[int(k),:] = v
-        else: self.last_action = np.reshape(action, (self.NUM_DRONES, 4))
+        else: self.last_action = np.reshape(action, (self.NUM_DRONES, self.N_ACTIONS))
 
     ####################################################################################################
     #### Draw the local frame of the nth drone #########################################################
@@ -541,6 +562,42 @@ class BaseAviary(gym.Env):
         DRAG_COEFF_XY = float(URDF_TREE[0].attrib['drag_coeff_xy']); DRAG_COEFF_Z = float(URDF_TREE[0].attrib['drag_coeff_z']); DRAG_COEFF = np.array([DRAG_COEFF_XY, DRAG_COEFF_XY, DRAG_COEFF_Z])
         DW_COEFF_1 = float(URDF_TREE[0].attrib['dw_coeff_1']); DW_COEFF_2 = float(URDF_TREE[0].attrib['dw_coeff_2']); DW_COEFF_3 = float(URDF_TREE[0].attrib['dw_coeff_3'])
         return M, L, THRUST2WEIGHT_RATIO, J, J_INV, KF, KM, COLLISION_H, COLLISION_R, COLLISION_Z_OFFSET, MAX_SPEED_KMH, GND_EFF_COEFF, PROP_RADIUS, DRAG_COEFF, DW_COEFF_1, DW_COEFF_2, DW_COEFF_3
+
+    ####################################################################################################
+    #### Set initial xyz and rpy  ######################################################################
+    ####################################################################################################
+    #### Arguments #####################################################################################
+    #### - initial_xyzs ((3,1) array)     initial x, y, and z position of drone in episode #############
+    #### - initial_rpys ((3,1) array)     initial r, p, and y orientations of drone in episode #########
+    ####################################################################################################
+    def _setInitialPoses(self, initial_xyzs, initial_rpys):
+        if initial_xyzs is None: 
+            self.INIT_XYZS = np.vstack([    
+                                            np.array([x*4*self.L for x in range(self.NUM_DRONES)]), 
+                                            np.array([y*4*self.L for y in range(self.NUM_DRONES)]), 
+                                            np.ones(self.NUM_DRONES) * (self.COLLISION_H/2-self.COLLISION_Z_OFFSET+.1) 
+                                                                                                                        ]).transpose().reshape(self.NUM_DRONES,3)
+
+        elif np.array(initial_xyzs).shape==(self.NUM_DRONES,3): 
+            self.INIT_XYZS = initial_xyzs
+        else: 
+            print("[ERROR] invalid initial_xyzs in BaseAviary.__init__(), try initial_xyzs.reshape(NUM_DRONES,3)")
+        
+        if initial_rpys is None: 
+            self.INIT_RPYS = np.zeros((self.NUM_DRONES,3))
+        elif np.array(initial_rpys).shape==(self.NUM_DRONES,3): 
+            self.INIT_RPYS = initial_rpys
+        else: print("[ERROR] invalid initial_rpys in BaseAviary.__init__(), try initial_rpys.reshape(NUM_DRONES,3)")
+
+    ####################################################################################################
+    #### Save, preprocess, and clip the action to the maximum RPM ######################################
+    #### Arguments #####################################################################################
+    #### - action ((N_ACTIONS,1) array)     normalized [-1,1] actions taken by drones ##################
+    ####################################################################################################
+    def _actionSaveAndPreprocess(self, action):
+        self._saveLastAction(action)
+        return np.reshape(self._preprocessAction(action), (self.NUM_DRONES, self.N_ACTIONS))
+
 
     ####################################################################################################
     #### Return the action space of the environment, to be implemented in a child class ################
