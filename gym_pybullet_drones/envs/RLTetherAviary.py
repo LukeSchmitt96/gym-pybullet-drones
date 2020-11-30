@@ -39,7 +39,7 @@ class RLTetherAviary(BaseAviary):
             initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
             gui=gui, record=record, obstacles=obstacles, user_debug_gui=user_debug_gui) 
             
-        self.MAX_TETHER_FORCE = 10.0        # temporary, TODO: determine realistic forces
+        self.MAX_TETHER_FORCE = 0.5        # TODO: determine realistic forces
         self.N_ACTIONS = 5
         
         self.INIT_X_BOUND = 0.2
@@ -55,10 +55,10 @@ class RLTetherAviary(BaseAviary):
         
         self.penaltyPosition = 1
         self.penaltyAngle = 1
-        self.penaltyVelocity = 5
-        self.penaltyAngularVelocity = 5
+        self.penaltyVelocity = 50
+        self.penaltyAngularVelocity = 50
         self.penaltyFlag = 1000
-        self.penaltyControl = 0.5/250**2
+        self.penaltyTetherUsage = 3
         
         self.positionThreshold = 0.1
         self.angleThreshold = np.pi/18
@@ -71,6 +71,8 @@ class RLTetherAviary(BaseAviary):
         #### Initialize/reset counters and zero-valued variables ###########################################
         self.RESET_TIME = time.time(); self.step_counter = 0; self.first_render_call = True
         self.X_AX = -1*np.ones(self.NUM_DRONES); self.Y_AX = -1*np.ones(self.NUM_DRONES); self.Z_AX = -1*np.ones(self.NUM_DRONES)
+        if self.PHYSICS == Physics.PYB_TETHER:
+            self.TETHER_AX = -1*np.ones(self.NUM_DRONES)
         self.GUI_INPUT_TEXT = -1*np.ones(self.NUM_DRONES); self.USE_GUI_RPM=False; self.last_input_switch = 0
         self.last_action = -1*np.ones((self.NUM_DRONES,self.N_ACTIONS))
         self.last_clipped_action = np.zeros((self.NUM_DRONES,self.N_ACTIONS)); self.gui_input = np.zeros(self.N_ACTIONS)
@@ -83,9 +85,6 @@ class RLTetherAviary(BaseAviary):
 
         self.quat = np.zeros((self.NUM_DRONES,4)); self.rpy = np.zeros((self.NUM_DRONES,3))
         self.vel = np.zeros((self.NUM_DRONES,3)); self.ang_v = np.zeros((self.NUM_DRONES,3))
-        #### Initialize wind speed and heading information #################################################
-        # windHeading = np.random.rand()*2*np.pi
-        # self.wind=np.random.rand()*self.MAXWINDSPEED*np.array([-np.cos(windHeading),np.sin(windHeading),0])
 
         #### Set PyBullet's parameters #####################################################################
         p.setGravity(0, 0, -self.G, physicsClientId=self.CLIENT)
@@ -109,9 +108,9 @@ class RLTetherAviary(BaseAviary):
     #### Additional component in action space for tether force magnitude ###############################
     ####################################################################################################
     def _actionSpace(self):
-        #### Action vector ######## P0            P1            P2            P3        P4
-        act_lower_bound = np.array([-1,           -1,           -1,           -1,       0])
-        act_upper_bound = np.array([ 1,            1,            1,            1,       1])   
+        #### Action vector ######## P0            P1            P2            P3            P4
+        act_lower_bound = np.array([-1,           -1,           -1,           -1,           0])
+        act_upper_bound = np.array([ 1,            1,            1,            1,           1])   
         return spaces.Box( low=act_lower_bound, high=act_upper_bound, dtype=np.float32 )
         
     ####################################################################################################
@@ -178,17 +177,19 @@ class RLTetherAviary(BaseAviary):
         v = obs[6:9]
         angle = obs[3:6]
         omega = obs[9:12]
-        #actions = obs[12:16]
-        
+        # actions = obs[12:16]
+        # tetherUsage = obs[17]
+
+
         errorPosition = np.sum(np.square(xy))                                       # error in x and y
         errorVelocity = np.sum(np.square(v))                                        # error in dx, dy, dz
         errorAngularVelocity = np.sum(np.square(omega[0:2]))                        # error in droll, dpitch
         
-        penaltyPosition = errorPosition*self.penaltyPosition                        # get cost from position    [error * penalty]
-        penaltyAngle = np.square(angle[2])*self.penaltyAngle                        # get cost from angle       [error^2 * penalty]
-        penaltyVelocity = errorVelocity*self.penaltyVelocity                        # get cost from velovity    [error * penalty]
-        penaltyAngularVelocity = errorAngularVelocity*self.penaltyAngularVelocity   # get cost from ang vel     [error * penalty]
-        
+        penaltyPosition = errorPosition*self.penaltyPosition                        # get cost from position        [error * penalty]
+        penaltyAngle = np.square(angle[2])*self.penaltyAngle                        # get cost from angle           [error^2 * penalty]
+        penaltyVelocity = errorVelocity*self.penaltyVelocity                        # get cost from velovity        [error * penalty]
+        penaltyAngularVelocity = errorAngularVelocity*self.penaltyAngularVelocity   # get cost from ang vel         [error * penalty]
+        # penaltyTetherUsage = tetherUsage * self.penaltyTetherUsage                  # get cose from tether force    [usage * penalty]
 
         # check if out of geofence
         outOfGeoFence = any(np.abs(obs[0:2]) > self.geoFenceMax_XY) or np.abs(obs[2]) > self.geoFenceMax_Z or np.abs(obs[2]) < self.geoFenceMin_Z
@@ -211,7 +212,8 @@ class RLTetherAviary(BaseAviary):
         
 
         # sum and return reward
-        return rewardGoal - penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity - penaltyFlag  #- penaltyControl - penaltyDiffControl
+        return rewardGoal - penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity \
+               - penaltyFlag# - penaltyTetherUsage #- penaltyControl - penaltyDiffControl
 
     ####################################################################################################
     #### Compute the current done value(s) #############################################################
@@ -298,11 +300,11 @@ class RLTetherAviary(BaseAviary):
     #### - nth_drone (int)                  order position of the drone in list self.DRONE_IDS #########
     ####################################################################################################
     #### Returns #######################################################################################
-    #### - state ((20,) array)              the state vector of the nth drone ##########################
+    #### - state ((21,) array)              the state vector of the nth drone ##########################
     ####################################################################################################
     def _getDroneStateVector(self, nth_drone):
         state = np.hstack([self.pos[nth_drone,:], self.quat[nth_drone,:], self.rpy[nth_drone,:], self.vel[nth_drone,:], self.ang_v[nth_drone,:], self.last_action[nth_drone,:]])
-        return state.reshape(20-4+self.N_ACTIONS,)        
+        return state.reshape(21,)        
 
     ####################################################################################################
     #### Set initial xyz for current episode ###########################################################

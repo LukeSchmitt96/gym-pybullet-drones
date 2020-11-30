@@ -114,12 +114,12 @@ class BaseAviary(gym.Env):
             self.CLIENT = p.connect(p.GUI) # p.connect(p.GUI, options="--opengl2")
             for i in [p.COV_ENABLE_RGB_BUFFER_PREVIEW, p.COV_ENABLE_DEPTH_BUFFER_PREVIEW, p.COV_ENABLE_SEGMENTATION_MARK_PREVIEW]: p.configureDebugVisualizer(i, 0, physicsClientId=self.CLIENT)
             p.resetDebugVisualizerCamera(cameraDistance=3, cameraYaw=-30, cameraPitch=-30, cameraTargetPosition=[0,0,0], physicsClientId=self.CLIENT)
-            ret = p.getDebugVisualizerCamera(physicsClientId=self.CLIENT); print("viewMatrix", ret[2]); print("projectionMatrix", ret[3])
+            ret = p.getDebugVisualizerCamera(physicsClientId=self.CLIENT); #print("viewMatrix", ret[2]); print("projectionMatrix", ret[3])
             if self.USER_DEBUG:
                 #### Add input sliders to the GUI ##################################################################
-                self.SLIDERS = -1*np.ones(5)
-                for i in range(4): self.SLIDERS[i] = p.addUserDebugParameter("Propeller "+str(i)+" RPM", 0, self.MAX_RPM, self.HOVER_RPM, physicsClientId=self.CLIENT)
-                if self.N_ACTIONS == 5: self.SLIDERS[4] = p.addUserDebugParameter("Tether Force", 0, self.MAX_TETHER_FORCE, 0, physicsClientId=self.CLIENT)
+                self.SLIDERS = -1*np.ones(self.N_ACTIONS)
+                for i in range(4):      self.SLIDERS[i] = p.addUserDebugParameter("Propeller "+str(i)+" RPM", 0, self.MAX_RPM,          self.HOVER_RPM, physicsClientId=self.CLIENT)
+                if self.N_ACTIONS == 5: self.SLIDERS[5] = p.addUserDebugParameter("Tether Force",             0, self.MAX_TETHER_FORCE, 0,              physicsClientId=self.CLIENT)
                 self.INPUT_SWITCH = p.addUserDebugParameter("Use GUI RPM", 9999, -1, 0, physicsClientId=self.CLIENT)
         else:
             #### Without debug GUI #############################################################################
@@ -265,7 +265,7 @@ class BaseAviary(gym.Env):
     def _housekeeping(self):
         #### Initialize/reset counters and zero-valued variables ###########################################
         self.RESET_TIME = time.time(); self.step_counter = 0; self.first_render_call = True
-        self.X_AX = -1*np.ones(self.NUM_DRONES); self.Y_AX = -1*np.ones(self.NUM_DRONES); self.Z_AX = -1*np.ones(self.NUM_DRONES)
+        self.X_AX = -1*np.ones(self.NUM_DRONES); self.Y_AX = -1*np.ones(self.NUM_DRONES); self.Z_AX = -1*np.ones(self.NUM_DRONES); self.TEHTER_AX = -1*np.ones(self.NUM_DRONES)
         self.GUI_INPUT_TEXT = -1*np.ones(self.NUM_DRONES); self.USE_GUI_RPM=False; self.last_input_switch = 0
         self.last_action = -1*np.ones((self.NUM_DRONES,self.N_ACTIONS))
         self.last_clipped_action = np.zeros((self.NUM_DRONES,self.N_ACTIONS)); self.gui_input = np.zeros(self.N_ACTIONS)
@@ -436,20 +436,25 @@ class BaseAviary(gym.Env):
         p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=drag, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT) 
 
     ####################################################################################################
-    #### PyBullet implementation of simple Tether ######################################################
+    #### PyBullet implementation of simple tether ######################################################
     ####################################################################################################
     #### Arguments #####################################################################################
+    #### - mag (double)                     force magnitude of tether ##################################
     #### - nth_drone (int)                  order position of the drone in list self.DRONE_IDS #########
     ####################################################################################################
     def _simpleTetherForce(self, mag, nth_drone):
         #### Rotation matrix of the base ###############################################################        
-        base_rot = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone,:])).reshape(3,3)
+        # base_rot = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone,:])).reshape(3,3)
         #### Simple force applied to the base/center of mass ###########################################
-        force_direction = np.array([0,0,1])
-        tether_force = np.dot(base_rot, -1.0*mag*force_direction)
+        # negative_z_direction = np.array([0,0,-1])
+        # positive_x_direction = np.array([1,0,0])
+        # tether_force_direction = np.dot(base_rot, negative_z_direction)
         #### Apply force ###############################################################################
-        p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=tether_force, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT)
-
+        # p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=mag*tether_force_direction, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT)
+        p.applyExternalForce(self.DRONE_IDS[nth_drone], -1, forceObj=(mag*-self.pos[nth_drone,:]/np.linalg.norm(self.pos[nth_drone,:],2)).tolist(), posObj=[0,0,0], flags=p.WORLD_FRAME, physicsClientId=self.CLIENT)
+        #### GUI elements ##############################################################################
+        if self.GUI:
+            self.TETHER_AX[nth_drone] = p.addUserDebugLine(lineWidth=5, lineFromXYZ=[0,0,0], lineToXYZ=(self.pos[nth_drone,:]).tolist(), lineColorRGB=[0.5,0.5,0.5], replaceItemUniqueId=int(self.TETHER_AX[nth_drone]), physicsClientId=self.CLIENT)
     ####################################################################################################
     #### PyBullet implementation of ground effect, SiQi Zhou's modelling ###############################
     ####################################################################################################
