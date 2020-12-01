@@ -426,3 +426,6 @@ TSWLatexianTemp*
 *.pkl
 *.npy
 files/video*
+
+# IDE Files
+/.vscode

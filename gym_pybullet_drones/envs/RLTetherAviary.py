@@ -53,14 +53,14 @@ class RLTetherAviary(BaseAviary):
         self.geoFenceMax_Z  = 1.5
         self.geoFenceMin_Z  = 0.2
         
-        self.penaltyPosition = 1
-        self.penaltyAngle = 1
+        self.penaltyPosition = 10
+        self.penaltyAngle = 10
         self.penaltyVelocity = 50
         self.penaltyAngularVelocity = 50
         self.penaltyFlag = 1000
         self.penaltyTetherUsage = 3
         
-        self.positionThreshold = 0.1
+        self.positionThreshold = 0.05
         self.angleThreshold = np.pi/18
         self.angularVelocityThreshold = 0.05
         self.velocityThreshold = 0.1
