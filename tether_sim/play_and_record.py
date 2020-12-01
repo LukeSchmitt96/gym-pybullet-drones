@@ -12,16 +12,19 @@ from stable_baselines3.common.evaluation import evaluate_policy
 
 from gym_pybullet_drones.envs.RLTetherAviary import RLTetherAviary
 
+############# This script will play and record a model
+
 if __name__ == "__main__":
 
-    env = RLTetherAviary(gui=1, record=0)
+    env = RLTetherAviary(gui=True, record=True)
     
-    model_name = "./models/v/ddpg1600000"
+    model_name = "./models/"
     model = DDPG.load(model_name)
-
 
     obs = env.reset()
 
-    for i in range(100000):
-        action, _states = model.predict(obs)
-        obs, rewards, dones, info = env.step(action)
+    done = False
+
+    while ~done:
+        action, _     = model.predict(obs, deterministic=True)
+        _, _, done, _ = env.step(action)
