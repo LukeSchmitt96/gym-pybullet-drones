@@ -429,3 +429,4 @@ files/video*
 
 # IDE Files
 /.vscode
+/logs
