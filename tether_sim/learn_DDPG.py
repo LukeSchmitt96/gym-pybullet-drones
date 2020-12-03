@@ -21,7 +21,7 @@ if __name__ == "__main__":
     CustomPolicy.layers = [80,80,32]    # actor network has layers [80, 80, 32]
 
     #### Check the environment's spaces ################################################################
-    env = RLTetherAviary(gui=False, record=True)
+    env = RLTetherAviary(gui=False, record=False)
     print("[INFO] Action space:", env.action_space)
     print("[INFO] Observation space:", env.observation_space)
     print("[INFO] Checking Environment...")
@@ -30,16 +30,17 @@ if __name__ == "__main__":
     #### Train the model ###############################################################################
     model = DDPG(CustomPolicy, env, verbose=1, batch_size=64)
 
-    training_timesteps = 1000
+    training_timesteps = 250000
     
-    for i in range(10):
+    for i in range(20):     # run for 20 * training_timesteps
 
         model.learn(total_timesteps=training_timesteps)
+
         model.save("./models/ddpg"+str((i+1)*training_timesteps))
         model.save_replay_buffer("./experiences/ddpg_experience"+str((i+1)*training_timesteps))
 
         #### Show (and record a video of) the model's performance ##########################################
-        env_test = RLTetherAviary(gui=True, record=True)
+        env_test = RLTetherAviary(gui=False, record=True)
         obs = env_test.reset()
         start = time.time()
         for i in range(10*env_test.SIM_FREQ):

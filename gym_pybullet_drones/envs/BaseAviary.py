@@ -90,7 +90,11 @@ class BaseAviary(gym.Env):
         self.INIT_R_BOUND = 0.0
         self.INIT_P_BOUND = 0.0
         self.INIT_YAW_BOUND = 0
-        self.MAX_TETHER_FORCE = 0.0
+        #### Tether Parameters #############################################################################
+        self.last_tether_force_mag = 0.0
+        self.tether_force_mag = 0.0
+        self.TETHER_MIN_LENGTH = None
+        self.MAX_TETHER_FORCE = None
         #### Options #######################################################################################
         self.DRONE_MODEL = drone_model; self.GUI = gui; self.RECORD = record; self.PHYSICS = physics
         self.OBSTACLES = obstacles; self.USER_DEBUG = user_debug_gui
@@ -124,7 +128,7 @@ class BaseAviary(gym.Env):
         else:
             #### Without debug GUI #############################################################################
             self.CLIENT = p.connect(p.DIRECT)
-            # p.setAdditionalSearchPath(pybullet_data.getDataPath()); plugin = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin"); print("plugin=", plugin)
+            p.setAdditionalSearchPath(pybullet_data.getDataPath()); plugin = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin"); print("plugin=", plugin)
             if self.RECORD:
                 #### Set the camera parameters to save frames in DIRECT mode #######################################
                 self.VID_WIDTH=int(640); self.VID_HEIGHT=int(480); self.FRAME_PER_SEC = 24; self.CAPTURE_FREQ = int(self.SIM_FREQ/self.FRAME_PER_SEC)
@@ -442,19 +446,20 @@ class BaseAviary(gym.Env):
     #### - mag (double)                     force magnitude of tether ##################################
     #### - nth_drone (int)                  order position of the drone in list self.DRONE_IDS #########
     ####################################################################################################
-    def _simpleTetherForce(self, mag, nth_drone):
-        #### Rotation matrix of the base ###############################################################        
-        # base_rot = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone,:])).reshape(3,3)
-        #### Simple force applied to the base/center of mass ###########################################
-        # negative_z_direction = np.array([0,0,-1])
-        # positive_x_direction = np.array([1,0,0])
-        # tether_force_direction = np.dot(base_rot, negative_z_direction)
-        #### Apply force ###############################################################################
-        # p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=mag*tether_force_direction, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT)
-        p.applyExternalForce(self.DRONE_IDS[nth_drone], -1, forceObj=(mag*-self.pos[nth_drone,:]/np.linalg.norm(self.pos[nth_drone,:],2)).tolist(), posObj=[0,0,0], flags=p.WORLD_FRAME, physicsClientId=self.CLIENT)
+    def _simpleTetherForce(self, _mag, nth_drone):
+        self.last_tether_force_mag = self.tether_force_mag
+        self.tether_force_mag = _mag
+        #### Determine if within tether limit ##########################################################
+        if(np.linalg.norm(self.pos[nth_drone,:]) > self.TETHER_MIN_LENGTH):
+            #### Apply force ###############################################################################
+            p.applyExternalForce(self.DRONE_IDS[nth_drone], -1, forceObj=(self.tether_force_mag*-self.pos[nth_drone,:]/np.linalg.norm(self.pos[nth_drone,:],2)).tolist(), posObj=[0,0,0], flags=p.WORLD_FRAME, physicsClientId=self.CLIENT)
+            tether_color = [0.1,1.0,0.1]
+        else:
+            tether_color = [0.8,0.1,0.1]
         #### GUI elements ##############################################################################
         if self.GUI:
-            self.TETHER_AX[nth_drone] = p.addUserDebugLine(lineWidth=5, lineFromXYZ=[0,0,0], lineToXYZ=(self.pos[nth_drone,:]).tolist(), lineColorRGB=[0.5,0.5,0.5], replaceItemUniqueId=int(self.TETHER_AX[nth_drone]), physicsClientId=self.CLIENT)
+            self.TETHER_AX[nth_drone] = p.addUserDebugLine(lineWidth=5, lineFromXYZ=[0,0,0], lineToXYZ=(self.pos[nth_drone,:]).tolist(), lineColorRGB=tether_color, replaceItemUniqueId=int(self.TETHER_AX[nth_drone]), physicsClientId=self.CLIENT)
+    
     ####################################################################################################
     #### PyBullet implementation of ground effect, SiQi Zhou's modelling ###############################
     ####################################################################################################

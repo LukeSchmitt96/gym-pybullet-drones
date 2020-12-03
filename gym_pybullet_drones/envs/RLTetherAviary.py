@@ -38,8 +38,7 @@ class RLTetherAviary(BaseAviary):
         super().__init__(drone_model=drone_model, neighbourhood_radius=neighbourhood_radius,
             initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
             gui=gui, record=record, obstacles=obstacles, user_debug_gui=user_debug_gui) 
-            
-        self.MAX_TETHER_FORCE = 0.5        # TODO: determine realistic forces
+
         self.N_ACTIONS = 5
         
         self.INIT_X_BOUND = 0.2
@@ -58,14 +57,19 @@ class RLTetherAviary(BaseAviary):
         self.penaltyVelocity = 50
         self.penaltyAngularVelocity = 50
         self.penaltyFlag = 1000
-        self.penaltyTetherUsage = 3
+        self.penaltyTetherUsage = 0
+        self.penaltyDiffTetherUsage = 5
         
-        self.positionThreshold = 0.05
+        self.positionThreshold = 0.15
         self.angleThreshold = np.pi/18
         self.angularVelocityThreshold = 0.05
         self.velocityThreshold = 0.1
         
         self.rewardGoal = 20
+
+        self.TETHER_MIN_LENGTH = 0.2
+        self.MAX_TETHER_FORCE = 1.2*(4*(self.MAX_RPM**2 * self.KF))
+        print("[INFO] Max tether force set to ", round(self.MAX_TETHER_FORCE,4), "N")
         
     def _housekeeping(self):
         #### Initialize/reset counters and zero-valued variables ###########################################
@@ -174,25 +178,29 @@ class RLTetherAviary(BaseAviary):
         # dyaw = obs[11]
 
         xy = obs[0:2]
+        rp = obs[3:5]
         v = obs[6:9]
-        angle = obs[3:6]
+        # angle = obs[3:6]
         omega = obs[9:12]
         # actions = obs[12:16]
-        # tetherUsage = obs[17]
+        # tetherUsage = self.tether_force_mag
+        deltaTetherUsage = np.abs(self.tether_force_mag - self.last_tether_force_mag)
 
 
         errorPosition = np.sum(np.square(xy))                                       # error in x and y
+        errorAngle = np.sum(np.square(rp))                                          # error in r and p
         errorVelocity = np.sum(np.square(v))                                        # error in dx, dy, dz
-        errorAngularVelocity = np.sum(np.square(omega[0:2]))                        # error in droll, dpitch
+        errorAngularVelocity = np.sum(np.square(omega[0:3]))                        # error in droll, dpitch, dyaw
         
         penaltyPosition = errorPosition*self.penaltyPosition                        # get cost from position        [error * penalty]
-        penaltyAngle = np.square(angle[2])*self.penaltyAngle                        # get cost from angle           [error^2 * penalty]
+        penaltyAngle = errorAngle*self.penaltyAngle                                 # get cost from angle           [error^2 * penalty]
         penaltyVelocity = errorVelocity*self.penaltyVelocity                        # get cost from velovity        [error * penalty]
         penaltyAngularVelocity = errorAngularVelocity*self.penaltyAngularVelocity   # get cost from ang vel         [error * penalty]
-        # penaltyTetherUsage = tetherUsage * self.penaltyTetherUsage                  # get cose from tether force    [usage * penalty]
+        # penaltyTetherUsage = tetherUsage * self.penaltyTetherUsage                  # get cost from tether force    [usage * penalty]
+        penaltyDiffTetherUsage = deltaTetherUsage * self.penaltyDiffTetherUsage     # get cost from dtether force   [change in usage * penalty]
 
         # check if out of geofence
-        outOfGeoFence = any(np.abs(obs[0:2]) > self.geoFenceMax_XY) or np.abs(obs[2]) > self.geoFenceMax_Z or np.abs(obs[2]) < self.geoFenceMin_Z
+        outOfGeoFence = np.linalg.norm(obs[0:2] > self.geoFenceMax_XY) or np.abs(obs[2]) > self.geoFenceMax_Z or np.abs(obs[2]) < self.geoFenceMin_Z
 
         crashed = True if obs[2]<self.COLLISION_H else False                        # check if drone is crashed
         penaltyFlag = self.penaltyFlag if outOfGeoFence or crashed else 0           # set penaltyFlag if geoFence or crashed
@@ -213,7 +221,7 @@ class RLTetherAviary(BaseAviary):
 
         # sum and return reward
         return rewardGoal - penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity \
-               - penaltyFlag# - penaltyTetherUsage #- penaltyControl - penaltyDiffControl
+               - penaltyFlag + penaltyDiffTetherUsage# - penaltyTetherUsage - penaltyControl - penaltyDiffControl
 
     ####################################################################################################
     #### Compute the current done value(s) #############################################################
@@ -225,7 +233,9 @@ class RLTetherAviary(BaseAviary):
     #### - done (..)                        the done value(s) associated to the current obs/state ######
     ####################################################################################################
     def _computeDone(self, obs):
-        outOfGeoFence = any(np.abs(obs[0:2]) > self.geoFenceMax_XY) or np.abs(obs[2]) > self.geoFenceMax_Z or np.abs(obs[2]) < self.geoFenceMin_Z
+        outOfGeoFence = np.linalg.norm(obs[0:2] > self.geoFenceMax_XY) or \
+                        np.abs(obs[2]) > self.geoFenceMax_Z or \
+                        np.abs(obs[2]) < self.geoFenceMin_Z
         outOfTime = True if (self.step_counter/self.SIM_FREQ > 10) else False
         crashed = True if obs[2]<self.COLLISION_H else False
         return outOfGeoFence or outOfTime or crashed 
