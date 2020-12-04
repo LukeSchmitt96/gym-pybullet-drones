@@ -205,9 +205,9 @@ class RLTetherAviary(BaseAviary):
         crashed = True if obs[2]<self.COLLISION_H else False                        # check if drone is crashed
         penaltyFlag = self.penaltyFlag if outOfGeoFence or crashed else 0           # set penaltyFlag if geoFence or crashed
         
-        rewardPosition = np.sqrt(errorPosition)>self.positionThreshold                          # determine if position is within threshold
-        rewardVelocity = np.sqrt(errorVelocity)>self.velocityThreshold                          # determine if lin vel is within threshold
-        rewardAngularVelocity = np.sqrt(errorAngularVelocity)>self.angularVelocityThreshold     # determine if ang vel is within threshold
+        rewardPosition = np.sqrt(errorPosition)<self.positionThreshold                          # determine if position is within threshold
+        rewardVelocity = np.sqrt(errorVelocity)<self.velocityThreshold                          # determine if lin vel is within threshold
+        rewardAngularVelocity = np.sqrt(errorAngularVelocity)<self.angularVelocityThreshold     # determine if ang vel is within threshold
         
         if all([rewardPosition, rewardVelocity, rewardAngularVelocity]):            # if all conditions are met, add goal reward, else don't
             rewardGoal = self.rewardGoal
