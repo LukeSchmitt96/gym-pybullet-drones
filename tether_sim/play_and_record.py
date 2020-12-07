@@ -18,21 +18,37 @@ from gym_pybullet_drones.envs.RLTetherAviary import RLTetherAviary
 
 if __name__ == "__main__":
 
-    #### Initialize the logger #########################################################################
-    logger = Logger(logging_freq_hz=int(ARGS.simulation_freq_hz/AGGR_PHY_STEPS), num_drones=ARGS.num_drones)
+    np.random.seed(24787)
 
-    env = RLTetherAviary(gui=False, record=True)
-    
-    model_name = "./models/l_ipynb/ddpg800000"
+    #### Initialize the environment #########################################################################
+    env = RLTetherAviary(gui=True, record=False)
+
+    #### Initialize the logger #########################################################################
+    logger = Logger(logging_freq_hz=int(env.SIM_FREQ), num_drones=1)
+
+    # models/ddpg3000000.zip
+    model_name = "/home/wrobotics11/gym-pybullet-drones/models/ddpg3000000"
     model = DDPG.load(model_name)
 
     obs = env.reset()
 
     done = False
 
+    # for i in range(10*env.SIM_FREQ):
+    #     action, _     = model.predict(obs, deterministic=True)
+    #     _, _, done, _ = env.step(action)
+    #     if done: break
+    
     for i in range(10*env.SIM_FREQ):
-        action, _     = model.predict(obs, deterministic=True)
-        _, _, done, _ = env.step(action)
-        if done: break
+        action, _states = model.predict(obs, deterministic=True)
+        obs, rewards, dones, info = env.step(action)
+        logger.log(drone=0, 
+                   timestamp=1/env.SIM_FREQ,
+                   state=obs)
 
+        # env.render()
+    
     env.close()
+
+    logger.save()
+    logger.plot()
