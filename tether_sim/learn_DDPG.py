@@ -6,10 +6,13 @@ import numpy as np
 import pybullet as p
 import gym
 import time
+import datetime
 from gym import error, spaces, utils
 from gym.utils import seeding
+import matplotlib.pyplot as plt
 from stable_baselines3 import DDPG
 from stable_baselines3.common import results_plotter
+from stable_baselines3.common.results_plotter import load_results, ts2xy, plot_results
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
 from stable_baselines3.ddpg.policies import MlpPolicy
@@ -28,6 +31,7 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
       It must contains the file created by the ``Monitor`` wrapper.
     :param verbose: (int)
     """
+
     def __init__(self, check_freq: int, log_dir: str, verbose=1):
         super(SaveOnBestTrainingRewardCallback, self).__init__(verbose)
         self.check_freq = check_freq
@@ -93,15 +97,19 @@ def plot_results(log_folder, title='Learning Curve'):
 
 if __name__ == "__main__":
 
+    print(os.getcwd())
+
     #### Set up learning env and training parameters ###################################################
-    log_dir = os.path.join("logs/", "learn_DDPG-" + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    os.mkdir(log_dir)
-    step_iters = 20
-    training_timesteps = 250000
+    log_dir = os.path.join("logs", "learn_DDPG-" + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
+    print(log_dir)
+    print(os.path.join(os.getcwd(), log_dir))
+    os.makedirs(log_dir)
+    step_iters = 10
+    training_timesteps = 500000
 
     #### Create custom policy ##########################################################################
     CustomPolicy = MlpPolicy
-    CustomPolicy.layers = [80,80,32]    # actor network has layers [80, 80, 32]
+    CustomPolicy.layers = [64,64,32]    # actor network has layers [64, 64, 32]
 
     #### Check the environment's spaces ################################################################
     env = RLTetherAviary(gui=False, record=False)
@@ -139,3 +147,7 @@ if __name__ == "__main__":
         env_test.close()
 
     env.close()
+    
+    results_plotter.plot_results([os.path.join(os.getcwd(), log_dir)], step_iters * training_timesteps, results_plotter.X_TIMESTEPS, "DDPG")
+    
+    plot_results(os.path.join(os.getcwd(), log_dir), "DDPG")
