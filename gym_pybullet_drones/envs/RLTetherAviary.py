@@ -50,7 +50,7 @@ class RLTetherAviary(BaseAviary):
 
         self.geoFenceMax_XY = 0.99
         self.geoFenceMax_Z  = 1.5
-        self.geoFenceMin_Z  = 0.2
+        self.geoFenceMin_Z  = 0
         
         self.penaltyPosition = 10
         self.penaltyAngle = 10
@@ -200,7 +200,7 @@ class RLTetherAviary(BaseAviary):
         penaltyDiffTetherUsage = deltaTetherUsage * self.penaltyDiffTetherUsage     # get cost from dtether force   [change in usage * penalty]
 
         # check if out of geofence
-        outOfGeoFence = np.linalg.norm(obs[0:2] > self.geoFenceMax_XY) or np.abs(obs[2]) > self.geoFenceMax_Z or np.abs(obs[2]) < self.geoFenceMin_Z
+        outOfGeoFence = np.linalg.norm(obs[0:2]) > self.geoFenceMax_XY or obs[2] > self.geoFenceMax_Z or obs[2] < self.geoFenceMin_Z
 
         crashed = True if obs[2]<self.COLLISION_H else False                        # check if drone is crashed
         penaltyFlag = self.penaltyFlag if outOfGeoFence or crashed else 0           # set penaltyFlag if geoFence or crashed
@@ -233,9 +233,9 @@ class RLTetherAviary(BaseAviary):
     #### - done (..)                        the done value(s) associated to the current obs/state ######
     ####################################################################################################
     def _computeDone(self, obs):
-        outOfGeoFence = np.linalg.norm(obs[0:2] > self.geoFenceMax_XY) or \
-                        np.abs(obs[2]) > self.geoFenceMax_Z or \
-                        np.abs(obs[2]) < self.geoFenceMin_Z
+        outOfGeoFence = np.linalg.norm(obs[0:2]) > self.geoFenceMax_XY or \
+                        obs[2] > self.geoFenceMax_Z or \
+                        obs[2] < self.geoFenceMin_Z
         outOfTime = True if (self.step_counter/self.SIM_FREQ > 10) else False
         crashed = True if obs[2]<self.COLLISION_H else False
         return outOfGeoFence or outOfTime or crashed 
