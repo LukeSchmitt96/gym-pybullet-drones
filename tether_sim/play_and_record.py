@@ -5,9 +5,12 @@ import math
 import numpy as np
 import pybullet as p
 import gym
+import matplotlib.pyplot as plt
 from gym import error, spaces, utils
 from gym.utils import seeding
 from stable_baselines3 import DDPG
+from stable_baselines3.common import results_plotter
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.evaluation import evaluate_policy
 from gym_pybullet_drones.utils.Logger import Logger
 
