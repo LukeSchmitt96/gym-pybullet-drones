@@ -67,8 +67,8 @@ class RLTetherAviary(BaseAviary):
         
         self.rewardGoal = 20
 
-        self.TETHER_MIN_LENGTH = 0.2
-        self.MAX_TETHER_FORCE = 1.2*(4*(self.MAX_RPM**2 * self.KF))
+        self.TETHER_MIN_LENGTH = 0.20
+        self.MAX_TETHER_FORCE = 0.25*(4*(self.MAX_RPM**2 * self.KF))
         print("[INFO] Max tether force set to ", round(self.MAX_TETHER_FORCE,4), "N")
         
     def _housekeeping(self):

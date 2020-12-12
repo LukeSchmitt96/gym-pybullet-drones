@@ -9,8 +9,10 @@ import time
 import datetime
 from gym import error, spaces, utils
 from gym.utils import seeding
+import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
 from stable_baselines3.common import results_plotter
+from stable_baselines3.common.results_plotter import load_results, ts2xy, plot_results
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
 from stable_baselines3.ppo import MlpPolicy
@@ -97,15 +99,15 @@ if __name__ == "__main__":
     #### Set up learning env and training parameters ###################################################
     log_dir = os.path.join("logs/", "learn_ppo-" + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
     os.makedirs(log_dir)
-    step_iters = 20
-    training_timesteps = 250000
+    step_iters = 40
+    training_timesteps = 500000
 
     #### Create custom policy ##########################################################################
     CustomPolicy = MlpPolicy
     CustomPolicy.layers = [64,64,32]    # actor network has layers [64, 64, 32]
 
     #### Check the environment's spaces ################################################################
-    env = RLTetherAviary(gui=1, record=False)
+    env = RLTetherAviary(gui=0, record=False)
     env = Monitor(env, log_dir)
     print("[INFO] Action space:", env.action_space)
     print("[INFO] Observation space:", env.observation_space)
@@ -140,3 +142,7 @@ if __name__ == "__main__":
         env_test.close()
 
     env.close()
+
+    results_plotter.plot_results([os.path.join(os.getcwd(), log_dir)], step_iters * training_timesteps, results_plotter.X_TIMESTEPS, "PPO")
+    
+    plot_results(os.path.join(os.getcwd(), log_dir), "PPO")

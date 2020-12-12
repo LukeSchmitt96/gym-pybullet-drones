@@ -8,7 +8,7 @@ import gym
 import matplotlib.pyplot as plt
 from gym import error, spaces, utils
 from gym.utils import seeding
-from stable_baselines3 import DDPG
+from stable_baselines3 import DDPG, PPO
 from stable_baselines3.common import results_plotter
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -30,8 +30,9 @@ if __name__ == "__main__":
     logger = Logger(logging_freq_hz=int(env.SIM_FREQ), num_drones=1)
 
     # models/ddpg3000000.zip
-    model_name = "/home/wrobotics11/gym-pybullet-drones/models/ddpg3000000"
-    model = DDPG.load(model_name)
+    model_name = "/home/wrobotics11/gym-pybullet-drones/tether_sim/models/0/ppo3000000"
+    # model = DDPG.load(model_name)
+    model = PPO.load(model_name)
 
     obs = env.reset()
 
