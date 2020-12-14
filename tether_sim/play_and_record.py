@@ -24,7 +24,7 @@ if __name__ == "__main__":
     np.random.seed(24787)
 
     #### Initialize the environment #########################################################################
-    env = RLTetherAviary(gui=True, record=False)
+    env = RLTetherAviary(gui=False, record=False)
 
     #### Initialize the logger #########################################################################
     logger = Logger(logging_freq_hz=int(env.SIM_FREQ), num_drones=1)
@@ -48,11 +48,13 @@ if __name__ == "__main__":
         obs, rewards, dones, info = env.step(action)
         logger.log(drone=0, 
                    timestamp=1/env.SIM_FREQ,
-                   state=obs)
+                   state=obs,
+                   control=action)
 
         # env.render()
     
     env.close()
 
-    logger.save()
-    logger.plot()
+    # logger.save()
+    # logger.plot()
+    logger.plot3D("DDPG")
