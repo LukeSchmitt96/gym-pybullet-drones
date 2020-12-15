@@ -6,6 +6,8 @@ import numpy as np
 import pybullet as p
 import gym
 import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
 from gym import error, spaces, utils
 from gym.utils import seeding
 from stable_baselines3 import DDPG, PPO
@@ -30,9 +32,11 @@ if __name__ == "__main__":
     logger = Logger(logging_freq_hz=int(env.SIM_FREQ), num_drones=1)
 
     # models/ddpg3000000.zip
-    model_name = "/home/wrobotics11/gym-pybullet-drones/tether_sim/models/0/ppo3000000"
+    # model_name = "/home/wrobotics11/gym-pybullet-drones/tether_sim/models/0/ppo3000000"
+    model_name = "/home/luke/gym-pybullet-drones/tether_sim/models/dqn/model.json"
     # model = DDPG.load(model_name)
-    model = PPO.load(model_name)
+    # model = PPO.load(model_name)
+    loaded = keras.models.model_from_json(model_name)
 
     obs = env.reset()
 
