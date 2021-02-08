@@ -422,9 +422,9 @@ TSWLatexianTemp*
 #*Notes.bib
 
 # Reinforcement learning and simulation results
-*.zip
+# *.zip
 *.pkl
-*.npy
+# *.npy
 files/video*
 
 # IDE Files
