@@ -156,7 +156,7 @@ class RLCrazyFlieAviary(BaseAviary):
         errorAngularVelocity = np.sum(np.square(omega))
         
         penaltyPosition = errorPosition*self.penaltyPosition
-        penaltyAngle = np.square(angle[2])*self.penaltyAngle
+        penaltyAngle = np.square(angle[0:2])*self.penaltyAngle
         penaltyVelocity = errorVelocity*self.penaltyVelocity
         penaltyAngularVelocity = errorAngularVelocity*self.penaltyAngularVelocity
         
