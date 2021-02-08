@@ -20,13 +20,12 @@ if __name__ == "__main__":
     
     # env.USE_GUI_RPM = True
 
-    model_name = "./models/v/ddpg1600000"
+    model_name = "<path-to-model>"
     model = DDPG.load(model_name)
 
     obs = env.reset()
 
     for i in range(1000):
         action, _states = model.predict(obs)
-        # print(action)
         obs, rewards, dones, info = env.step(action)
         # env.render()
