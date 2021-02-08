@@ -82,12 +82,20 @@ class Logger(object):
         fig.subplots_adjust(left=0.06, bottom=0.05, right=0.99, top=0.98, wspace=0.15, hspace=0.0)
         plt.show()
 
-    def plot3D(self, method):
+    ####################################################################################################
+    #### Plot the logged position (state[:,0:2,:]) data in three dimensions ############################
+    ####################################################################################################
+    #### Arguments #####################################################################################
+    #### - method (string)                       policy method used for logged flight ##################
+    #### - path (string)                         path to where plots should be saved ###################
+    ####################################################################################################
+    def plot3D(self, method, path="./plots"):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
-        ax.plot(self.states[0,0,:], self.states[0,1,:], self.states[0,2,:])
+        ax.plot(self.states[:,0,:], self.states[:,1,:], self.states[:,2,:])
 
+        # TODO: set limits dynamically
         plt.xlim([-0.25, 0.25])
         plt.ylim([-0.25, 0.25])
         ax.set_zlim(0, 1.25)
@@ -98,7 +106,7 @@ class Logger(object):
         ax.set_ylabel('Y [m]')
         ax.set_zlabel('Z [m]')
 
-        plt.savefig(f"/home/luke/Desktop/MLAI/plots/{method}.png")
+        plt.savefig(f"{path}/{method}.png")
 
         plt.show()
 
