@@ -30,7 +30,7 @@ class RLTetherAviary(BaseAviary):
     #### - record (bool)                    whether to save a video of the simulation ##################
     #### - obstacles (bool)                 whether to add obstacles to the simulation #################
     ####################################################################################################
-    def __init__(self, drone_model: DroneModel=DroneModel.CF2X, num_drones: int=1,
+    def __init__(self, drone_model: DroneModel=DroneModel.CERLAB, num_drones: int=1,
                         neighbourhood_radius: float=np.inf, initial_xyzs=None, initial_rpys=None,
                         physics: Physics=Physics.PYB_TETHER, freq: int=200, aggregate_phy_steps: int=1,
                         gui=False, record=False, obstacles=False, user_debug_gui=True):

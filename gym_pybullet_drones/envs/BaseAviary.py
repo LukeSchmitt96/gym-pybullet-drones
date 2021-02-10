@@ -21,6 +21,7 @@ class DroneModel(Enum):
     CF2P = 1                 # Bitcraze Craziflie 2.0 in the + configuration
     HB = 2                   # Generic quadrotor (with AscTec Hummingbird inertial properties)
     MAMBO = 3                # Parrot Mambo quadrotor
+    CERLAB = 4               # CERLAB TBS drone   
     #### String representation of DroneModel ###########################################################
     def __str__(self): return self.name
 
@@ -102,6 +103,7 @@ class BaseAviary(gym.Env):
         elif self.DRONE_MODEL==DroneModel.CF2P: self.URDF = "cf2p.urdf"
         elif self.DRONE_MODEL==DroneModel.HB: self.URDF = "hb.urdf"
         elif self.DRONE_MODEL==DroneModel.MAMBO: self.URDF = "mambo.urdf"
+        elif self.DRONE_MODEL==DroneModel.CERLAB: self.URDF = "cerlab.urdf"
         #### Load the drone properties from the .urdf file #################################################
         self.M, self.L, self.THRUST2WEIGHT_RATIO, self.J, self.J_INV, self.KF, self.KM, self.COLLISION_H, self.COLLISION_R, self.COLLISION_Z_OFFSET, self.MAX_SPEED_KMH, self.GND_EFF_COEFF, self.PROP_RADIUS, self.DRAG_COEFF, self.DW_COEFF_1, self.DW_COEFF_2, self.DW_COEFF_3 = self._parseURDFParameters()
         print("[INFO] BaseAviary.__init__() loaded parameters from the drone's .urdf:\n[INFO] m {:f}, L {:f},\n[INFO] ixx {:f}, iyy {:f}, izz {:f},\n[INFO] kf {:f}, km {:f},\n[INFO] t2w {:f}, max_speed_kmh {:f},\n[INFO] gnd_eff_coeff {:f}, prop_radius {:f},\n[INFO] drag_xy_coeff {:f}, drag_z_coeff {:f},\n[INFO] dw_coeff_1 {:f}, dw_coeff_2 {:f}, dw_coeff_3 {:f}".format(
@@ -123,7 +125,7 @@ class BaseAviary(gym.Env):
                 #### Add input sliders to the GUI ##################################################################
                 self.SLIDERS = -1*np.ones(self.N_ACTIONS)
                 for i in range(4):      self.SLIDERS[i] = p.addUserDebugParameter("Propeller "+str(i)+" RPM", 0, self.MAX_RPM,          self.HOVER_RPM, physicsClientId=self.CLIENT)
-                if self.N_ACTIONS == 5: self.SLIDERS[5] = p.addUserDebugParameter("Tether Force",             0, self.MAX_TETHER_FORCE, 0,              physicsClientId=self.CLIENT)
+                if self.N_ACTIONS == 5: self.SLIDERS[4] = p.addUserDebugParameter("Tether Force",             0, self.MAX_TETHER_FORCE, 0,              physicsClientId=self.CLIENT)
                 self.INPUT_SWITCH = p.addUserDebugParameter("Use GUI RPM", 9999, -1, 0, physicsClientId=self.CLIENT)
         else:
             #### Without debug GUI #############################################################################
@@ -493,7 +495,7 @@ class BaseAviary(gym.Env):
         force_world_frame = thrust_world_frame - np.array([0, 0, self.GRAVITY])
         z_torques = np.array(rpm**2)*self.KM
         z_torque = (-z_torques[0] + z_torques[1] - z_torques[2] + z_torques[3])
-        if self.DRONE_MODEL==DroneModel.CF2X:
+        if self.DRONE_MODEL==DroneModel.CF2X or self.DRONE_MODEL==DroneModel.CERLAB:
             x_torque = (forces[0] + forces[1] - forces[2] - forces[3]) * (self.L/np.sqrt(2))
             y_torque = (- forces[0] + forces[1] + forces[2] - forces[3]) * (self.L/np.sqrt(2))
         elif self.DRONE_MODEL==DroneModel.CF2P or self.DRONE_MODEL==DroneModel.HB:
